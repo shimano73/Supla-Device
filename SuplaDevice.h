@@ -55,11 +55,10 @@ typedef bool (*_cb_arduino_connected)(void);
 typedef void (*_cb_arduino_stop)(void);
 typedef void (*_cb_arduino_set_relay_state)(int channelNumber, String state);
 typedef int (*_cb_arduino_get_relay_state)(int channelNumber);
-typedef double (*_cb_arduino_get_temperature)(int channelNumber, double last_val);
+typedef double (*_cb_arduino_get_double)(int channelNumber, double current_value);
 typedef void (*_cb_arduino_get_temperature_and_humidity)(int channelNumber, double *temp, double *humidity);
 typedef void (*_cb_arduino_get_rgbw_value)(int channelNumber, unsigned char *red, unsigned char *green, unsigned char *blue, unsigned char *color_brightness, unsigned char *brightness);
 typedef void (*_cb_arduino_set_rgbw_value)(int channelNumber, unsigned char red, unsigned char green, unsigned char blue, unsigned char color_brightness, unsigned char brightness);
-typedef double (*_cb_arduino_get_distance)(int channelNumber, double distance);
 typedef int (*_impl_arduino_digitalRead)(int channelNumber, uint8_t pin);
 typedef void (*_impl_arduino_digitalWrite)(int channelNumber, uint8_t pin, uint8_t val);
 typedef void (*_impl_arduino_status)(int status, const char *msg);
@@ -79,12 +78,15 @@ typedef struct SuplaDeviceCallbacks {
 	_cb_arduino_connected svr_connected;
 	_cb_arduino_connect svr_connect;
 	_cb_arduino_stop svr_disconnect;
-	_cb_arduino_get_temperature get_temperature;
+	_cb_arduino_get_double get_temperature;
+	_cb_arduino_get_double get_pressure;
+	_cb_arduino_get_double get_weight;
+	_cb_arduino_get_double get_wind;
+	_cb_arduino_get_double get_rain;
 	_cb_arduino_get_temperature_and_humidity get_temperature_and_humidity;
 	_cb_arduino_get_rgbw_value get_rgbw_value;
 	_cb_arduino_set_rgbw_value set_rgbw_value;
-    _cb_arduino_get_distance get_distance;
-	
+	_cb_arduino_get_double get_distance;
 	_cb_arduino_set_relay_state save_supla_relay_state;
 	_cb_arduino_get_relay_state read_supla_relay_state;
 
@@ -109,16 +111,16 @@ typedef struct SuplaChannelPin {
 	int type;
 	int start;
 	int flag;
+	_supla_int_t DurationMS;
 	
 	unsigned long time_left;
 	unsigned long bi_time_left;
 	unsigned long vc_time;
+	unsigned long btn_next_check;
 	
-	union {
-		uint8_t last_val;
-		double last_val_dbl1;
-		double last_val_dbl2;
-	};
+	uint8_t last_val;
+	double last_val_dbl1;
+	double last_val_dbl2;
 };
 
 typedef struct SuplaDeviceRollerShutterTask {
@@ -177,7 +179,7 @@ protected:
 	char registered;
 	bool isInitialized(bool msg);
 	void setString(char *dst, const char *src, int max_size);
-	int addChannel(int pin1, int pin2, bool hiIsLo, bool bistable, int type = NULL, int flag = NULL);
+	int addChannel(int pin1, int pin2, bool hiIsLo, bool bistable, int type = NULL, int flag = NULL, _supla_int_t DurationMS = 0);
 	void channelValueChanged(int channel_number, char v, double d, char var);
 	void channelSetValue(int channel, char value, _supla_int_t DurationMS);
 	void channelSetDoubleValue(int channelNum, double value);
@@ -226,8 +228,7 @@ protected:
     void rs_cancel_task(SuplaDeviceRollerShutter *rs);
     bool rs_button_released(SuplaDeviceRollerShutterButton *btn);
     void rs_buttons_processing(SuplaDeviceRollerShutter *rs);
-	
-	    
+    
     void iterate_relay(SuplaChannelPin *pin, TDS_SuplaDeviceChannel_B *channel, unsigned long time_diff, int channel_idx);
     void iterate_sensor(SuplaChannelPin *pin, TDS_SuplaDeviceChannel_B *channel, unsigned long time_diff, int channel_idx);
     void iterate_thermometer(SuplaChannelPin *pin, TDS_SuplaDeviceChannel_B *channel, unsigned long time_diff, int channel_idx);
@@ -267,7 +268,10 @@ public:
    bool addSensorNO(int sensorPin, bool pullUp);
    bool addSensorNO(int sensorPin);
    
-   int addRelayButton(int relayPin1, int relayPin2, int type_button, int flag, bool hiIsLo, _supla_int_t functions);
+   int addRelayButton(int relayPin1, int relayPin2, int type_button, int flag, bool hiIsLo, _supla_int_t DurationMS, _supla_int_t functions);
+   bool addRelayButton(int relayPin, int relayPin2, int type_button, int flag, bool hiIsLo, _supla_int_t DurationMS);
+   bool addRelayButton(int relayPin, int relayPin2, int type_button, int flag, _supla_int_t DurationMS);
+   bool addRelayButton(int relayPin, int relayPin2, int type_button, int flag, bool hiIsLo);
    bool addRelayButton(int relayPin, int relayPin2, int type_button, int flag);
    
    int addDS18B20Thermometer();
@@ -278,10 +282,14 @@ public:
    bool addRgbController(void);
    bool addDimmer(void);
    bool addDistanceSensor(void);
+   int addPressureSensor(void);
+   bool addWeightSensor(void);
+   bool addWindSensor(void);
+   bool addRainSensor(void);
     
    bool relayOn(int channel_number, _supla_int_t DurationMS);
    bool relayOff(int channel_number);
-   bool relaySwitch(int channel_number, int relay);
+   bool relaySwitch(int channel_number, int relay, _supla_int_t DurationMS);
    
    void rollerShutterReveal(int channel_number);
    void rollerShutterShut(int channel_number);
@@ -292,13 +300,16 @@ public:
    void iterate(void);
    
    SuplaDeviceCallbacks getCallbacks(void);
-   
    void setSaveRelayStateCallback(_cb_arduino_set_relay_state save_supla_relay_state);
    void setReadRelayStateCallback(_cb_arduino_get_relay_state read_supla_relay_state);
-   void setTemperatureCallback(_cb_arduino_get_temperature get_temperature);
+   void setTemperatureCallback(_cb_arduino_get_double get_temperature);
    void setTemperatureHumidityCallback(_cb_arduino_get_temperature_and_humidity get_temperature_and_humidity);
    void setRGBWCallbacks(_cb_arduino_get_rgbw_value get_rgbw_value, _cb_arduino_set_rgbw_value set_rgbw_value);
-   void setDistanceCallback(_cb_arduino_get_distance get_distance);
+   void setDistanceCallback(_cb_arduino_get_double get_distance);
+   void setPressureCallback(_cb_arduino_get_double get_pressure);
+   void setWeightCallback(_cb_arduino_get_double get_weight);
+   void setWindCallback(_cb_arduino_get_double get_wind);
+   void setRainCallback(_cb_arduino_get_double get_rain);
    void setRollerShutterFuncImpl(_impl_rs_save_position impl_save_position,
                                    _impl_rs_load_position impl_load_position,
                                    _impl_rs_save_settings impl_save_settings,
